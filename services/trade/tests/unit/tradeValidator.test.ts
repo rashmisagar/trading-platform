@@ -13,9 +13,19 @@ describe('validateTrade — pre-trade checks', () => {
     expect(result).toEqual({ valid: false, reason: 'NOTIONAL_LIMIT_EXCEEDED' });
   });
 
+  it('accepts a trade at exactly the $1m notional limit', () => {
+    // 10,000 × $100.00 = $1,000,000.00 — the limit is exclusive, so this books
+    expect(validateTrade({ ...req, quantity: 10000 }, 10000)).toEqual({ valid: true });
+  });
+
   it('rejects non-positive quantity', () => {
     expect(validateTrade({ ...req, quantity: 0 }, 18950).valid).toBe(false);
     expect(validateTrade({ ...req, quantity: -5 }, 18950).valid).toBe(false);
+  });
+
+  it('rejects fractional quantity', () => {
+    const result = validateTrade({ ...req, quantity: 2.5 }, 18950);
+    expect(result).toEqual({ valid: false, reason: 'QUANTITY_MUST_BE_POSITIVE_INTEGER' });
   });
 
   it('rejects when notional would overflow safe integers', () => {
