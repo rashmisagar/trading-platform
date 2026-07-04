@@ -19,7 +19,8 @@
   "devDependencies": {
     "@pact-foundation/pact": "^13.1.3",
     "@types/pg": "^8.11.6",
+    "allure-vitest": "^3.10.2",
     "typescript": "^5.5.4",
-    "vitest": "^2.0.5"
+    "vitest": "^3.2.6"
   }
 }

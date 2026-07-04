@@ -16,10 +16,13 @@
     "test:contract:consumer": "npm run test:contract:consumer --workspace services/trade",
     "test:contract:provider": "npm run test:contract:provider --workspace services/market-data && npm run test:contract:provider --workspace services/portfolio",
     "test:component": "npm run test --workspace tests/component",
-    "test:e2e": "npm run test --workspace tests/e2e"
+    "test:e2e": "npm run test --workspace tests/e2e",
+    "report:generate": "./scripts/collect-allure-results.sh && allure generate --clean --output allure-report allure-results",
+    "report:open": "allure open allure-report"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.0",
+    "allure-commandline": "^2.43.0",
     "eslint": "^9.9.0",
     "prettier": "^3.3.3",
     "typescript": "^5.5.4",
