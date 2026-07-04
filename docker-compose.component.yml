@@ -1,0 +1,40 @@
+# COMPONENT TEST topology: each service runs as its REAL container, but
+# everything OUTSIDE the service boundary is a stub (WireMock) or disposable
+# (Postgres). Trade's env deliberately points at wiremock, not real services.
+services:
+  wiremock:
+    image: wiremock/wiremock:3.9.1
+    ports: ['8081:8080']
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: testdb
+    ports: ['5432:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  market-data:
+    build: ./services/market-data
+    ports: ['3001:3001']
+
+  portfolio:
+    build: ./services/portfolio
+    environment:
+      DATABASE_URL: postgresql://postgres:test@postgres:5432/testdb
+    ports: ['3002:3002']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trade:
+    build: ./services/trade
+    environment:
+      MARKET_DATA_URL: http://wiremock:8080
+      PORTFOLIO_URL: http://wiremock:8080
+    ports: ['3003:3003']
+    depends_on: [wiremock]

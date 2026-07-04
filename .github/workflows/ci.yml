@@ -1,0 +1,225 @@
+name: CI — Quality Gates
+
+# ─────────────────────────────────────────────────────────────────────────
+# Gate order = the test pyramid made physical. Cheapest gates fail first.
+#
+#  lint+typecheck ─→ unit ─┬→ contract consumer ─→ contract provider ─┐
+#                          └→ integration (real Postgres) ────────────┤
+#                                                                     ▼
+#                                        build images ─→ component tests
+#                                                                     ▼
+#                                          e2e stack up ─→ Playwright e2e
+#                                                          └→ k6 smoke
+#
+# Everything runs on ephemeral infra inside the workflow — zero external
+# services needed, so this repo is runnable the moment it's pushed.
+# Long-running load/spike tests live in nightly-performance.yml.
+# ─────────────────────────────────────────────────────────────────────────
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ── GATE 1: lint, format, typecheck — fails in seconds ──
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: ESLint (strict TS rules — no any, explicit return types)
+        run: npm run lint
+      - name: Prettier format check
+        run: npm run format:check
+      - name: TypeScript strict typecheck (all workspaces)
+        run: npm run typecheck
+
+  # ── GATE 2: unit tests — highest volume, fully isolated ──
+  unit-tests:
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [market-data, portfolio, trade]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Unit tests — ${{ matrix.service }}
+        run: npm run test:unit --workspace services/${{ matrix.service }}
+
+  # ── GATE 3: integration tests — one real dependency per boundary ──
+  # portfolio ↔ real Postgres; trade's HTTP clients ↔ real sockets/timeouts.
+  integration-tests:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Integration tests (all workspaces that define them)
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/testdb
+        run: npm run test:integration
+
+  # ── GATE 4a: contract tests — CONSUMER side (trade generates pacts) ──
+  contract-consumer:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Generate consumer pacts (trade → market-data, trade → portfolio)
+        run: npm run test:contract:consumer
+      - name: Upload pacts for provider verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: pacts
+          path: pacts/*.json
+      # In a multi-repo estate with a Pact Broker, replace the artifact
+      # upload with `pact-broker publish` + `can-i-deploy` (see STANDARDS §4).
+
+  # ── GATE 4b: contract tests — PROVIDER verification ──
+  # Each provider replays trade's pact against its REAL app. This is the gate
+  # that catches "provider changed its API and broke the consumer" pre-deploy.
+  contract-provider:
+    needs: contract-consumer
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [market-data, portfolio]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: pacts
+          path: pacts/
+      - name: Verify ${{ matrix.service }} honours trade's pact
+        run: npm run test:contract:provider --workspace services/${{ matrix.service }}
+
+  # ── GATE 5: build container images (the real deployable artifacts) ──
+  build-images:
+    needs: [integration-tests, contract-provider]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build all service images
+        run: docker compose -f docker-compose.component.yml build
+      # Add Trivy scanning + registry push here once you have a registry:
+      #   aquasecurity/trivy-action with severity CRITICAL,HIGH and exit-code 1
+
+  # ── GATE 6: component tests — real containers, dependencies stubbed ──
+  component-tests:
+    needs: build-images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Start component topology (services + WireMock + Postgres)
+        run: docker compose -f docker-compose.component.yml up -d --build
+      - name: Wait for trade service
+        run: ./scripts/wait-for-healthy.sh http://localhost:3003/health 60
+      - name: Run component suite (drives trade via its public API)
+        run: npm run test:component
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.component.yml logs
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.component.yml down -v
+
+  # ── GATE 7: e2e + performance smoke against the fully wired stack ──
+  e2e-and-perf-smoke:
+    needs: component-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Start the real wiring (all three services + Postgres)
+        run: docker compose -f docker-compose.e2e.yml up -d --build
+      - name: Wait for the full chain
+        run: |
+          ./scripts/wait-for-healthy.sh http://localhost:3001/health 60
+          ./scripts/wait-for-healthy.sh http://localhost:3002/health 60
+          ./scripts/wait-for-healthy.sh http://localhost:3003/health 60
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Playwright e2e — curated critical journeys
+        run: npm run test:e2e
+      - name: k6 performance smoke — tight thresholds on the deployed stack
+        uses: grafana/setup-k6-action@v1
+      - run: k6 run tests/performance/trade-smoke.js
+        env:
+          TRADE_URL: http://localhost:3003
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/e2e/playwright-report/
+      - name: Dump container logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.e2e.yml logs
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
+
+  # ── GATE 8 (main only): deployment placeholder ──
+  # Wire in your registry push + Helm/ECS/K8s deploy + canary watch here.
+  deploy:
+    needs: e2e-and-perf-smoke
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production # configure required reviewers in repo settings
+    steps:
+      - run: echo "All quality gates passed — deploy step goes here (registry push, Helm, canary)."

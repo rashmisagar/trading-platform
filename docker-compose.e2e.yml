@@ -1,0 +1,35 @@
+# E2E topology: real services, really wired together. Playwright and k6 run
+# against trade's public API through this stack.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: testdb
+    ports: ['5432:5432']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  market-data:
+    build: ./services/market-data
+    ports: ['3001:3001']
+
+  portfolio:
+    build: ./services/portfolio
+    environment:
+      DATABASE_URL: postgresql://postgres:test@postgres:5432/testdb
+    ports: ['3002:3002']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  trade:
+    build: ./services/trade
+    environment:
+      MARKET_DATA_URL: http://market-data:3001
+      PORTFOLIO_URL: http://portfolio:3002
+    ports: ['3003:3003']
+    depends_on: [market-data, portfolio]

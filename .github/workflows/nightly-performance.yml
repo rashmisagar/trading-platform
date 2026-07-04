@@ -1,0 +1,38 @@
+name: Nightly Performance — Load & Spike
+
+# Off the PR critical path on purpose: these run for minutes-to-hours and
+# answer different questions than the CI smoke (capacity + graceful
+# degradation, not correctness). Scheduled ahead of market open.
+
+on:
+  schedule:
+    - cron: '0 2 * * 1-5' # 02:00 UTC weekdays
+  workflow_dispatch: {}
+
+jobs:
+  load-and-spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the full stack
+        run: docker compose -f docker-compose.e2e.yml up -d --build
+      - name: Wait for health
+        run: |
+          ./scripts/wait-for-healthy.sh http://localhost:3001/health 60
+          ./scripts/wait-for-healthy.sh http://localhost:3002/health 60
+          ./scripts/wait-for-healthy.sh http://localhost:3003/health 60
+      - uses: grafana/setup-k6-action@v1
+      - name: k6 LOAD — expected peak, SLO thresholds (p95/p99)
+        run: k6 run tests/performance/trade-load.js
+        env:
+          TRADE_URL: http://localhost:3003
+      - name: k6 SPIKE — market-open step; graceful degradation is the assertion
+        run: k6 run tests/performance/trade-spike.js
+        env:
+          TRADE_URL: http://localhost:3003
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.e2e.yml logs
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
