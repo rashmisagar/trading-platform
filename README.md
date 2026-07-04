@@ -49,27 +49,28 @@ gates in test-pyramid order.
 
 ### Why each boundary gets the test level it does
 
-| Boundary | Level | Why this level and not another |
-|---|---|---|
-| Inside each service (validator, position math, money) | **Unit** | Cheapest place to catch a logic bug; domain gets sociable tests, orchestration gets mockist tests |
-| trade's HTTP clients ↔ real sockets | **Integration** | Timeout, serialization, and status-mapping bugs only exist over a real connection — mocks can't catch them |
-| portfolio ↔ Postgres | **Integration** | Proves the SQL: precision, idempotency at the DB level, `FOR UPDATE` concurrency |
-| trade ↔ market-data, trade ↔ portfolio | **Contract (Pact)** | We own both sides' pipelines; the failure mode is *the provider changing its API*, and provider verification catches that pre-deploy |
-| Each whole service via its public API | **Component** | Acceptance test for the service in isolation: real container, stubbed world — including failure modes (timeout ⇒ fail closed, malformed upstream ⇒ 503) |
-| The full wired system | **E2E (Playwright)** | Three curated journeys only — proves the real wiring, doesn't re-test logic |
-| trade's public API under load | **Performance (k6)** | Smoke in CI; load (SLO percentiles) + spike (graceful degradation) nightly |
+| Boundary                                              | Level                | Why this level and not another                                                                                                                          |
+| ----------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inside each service (validator, position math, money) | **Unit**             | Cheapest place to catch a logic bug; domain gets sociable tests, orchestration gets mockist tests                                                       |
+| trade's HTTP clients ↔ real sockets                   | **Integration**      | Timeout, serialization, and status-mapping bugs only exist over a real connection — mocks can't catch them                                              |
+| portfolio ↔ Postgres                                  | **Integration**      | Proves the SQL: precision, idempotency at the DB level, `FOR UPDATE` concurrency                                                                        |
+| trade ↔ market-data, trade ↔ portfolio                | **Contract (Pact)**  | We own both sides' pipelines; the failure mode is _the provider changing its API_, and provider verification catches that pre-deploy                    |
+| Each whole service via its public API                 | **Component**        | Acceptance test for the service in isolation: real container, stubbed world — including failure modes (timeout ⇒ fail closed, malformed upstream ⇒ 503) |
+| The full wired system                                 | **E2E (Playwright)** | Three curated journeys only — proves the real wiring, doesn't re-test logic                                                                             |
+| trade's public API under load                         | **Performance (k6)** | Smoke in CI; load (SLO percentiles) + spike (graceful degradation) nightly                                                                              |
 
 ---
 
 ## The services
 
-| Service | Port | Responsibility | Data |
-|---|---|---|---|
-| `market-data` | 3001 | `GET /prices/:symbol` — quotes in integer minor units | none (static source) |
-| `portfolio` | 3002 | `POST /positions/apply`, `GET /positions/:accountId` — idempotent position keeping | owns Postgres |
-| `trade` | 3003 | `POST /trades` — prices via market-data, validates (notional limit), books via portfolio | none (stateless orchestrator) |
+| Service       | Port | Responsibility                                                                           | Data                          |
+| ------------- | ---- | ---------------------------------------------------------------------------------------- | ----------------------------- |
+| `market-data` | 3001 | `GET /prices/:symbol` — quotes in integer minor units                                    | none (static source)          |
+| `portfolio`   | 3002 | `POST /positions/apply`, `GET /positions/:accountId` — idempotent position keeping       | owns Postgres                 |
+| `trade`       | 3003 | `POST /trades` — prices via market-data, validates (notional limit), books via portfolio | none (stateless orchestrator) |
 
 Finance-specific behaviours baked in (and tested):
+
 - **Money is integer minor units** — constructing money from a float throws (`money.test.ts`).
 - **Idempotency keys on every booking** — a retried trade can never double-book, enforced at the DB level (`pgPositionRepo.test.ts`).
 - **Fail closed** — if market-data is slow/unavailable/malformed, the trade is rejected, never executed against a guessed price (`app.test.ts`, component suite).
@@ -124,6 +125,7 @@ npm run test:e2e
 
 This repo keeps everything runnable with zero external infrastructure. In a real
 multi-team/multi-repo estate you would swap in:
+
 - **Pact Broker** instead of the pacts/ artifact hand-off: consumers `pact-broker publish`,
   providers verify from the broker, and deployment is gated by `can-i-deploy`.
 - **Registry + image scanning** (Trivy) in the build gate, and Helm/K8s + canary in deploy.
