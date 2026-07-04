@@ -14,15 +14,16 @@ the thing it checks is enforced consistently. References point at real files.
 
 ## 2. TypeScript standards (enforced by Gate 1)
 
-| Concern | Enforcement |
-|---|---|
-| `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` | `tsconfig.base.json`, checked by `tsc --noEmit` |
-| `any` banned | `@typescript-eslint/no-explicit-any: error` in `eslint.config.js` |
-| Explicit return types on functions | eslint rule (relaxed in tests) |
-| Formatting | Prettier, `format:check` in CI |
-| Runtime validation of ALL external input | `zod` schema at every boundary — HTTP body, params, and **upstream responses** (see `clients/*.ts`: a malformed upstream body is treated as unavailable, never trusted) |
+| Concern                                                            | Enforcement                                                                                                                                                             |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` | `tsconfig.base.json`, checked by `tsc --noEmit`                                                                                                                         |
+| `any` banned                                                       | `@typescript-eslint/no-explicit-any: error` in `eslint.config.js`                                                                                                       |
+| Explicit return types on functions                                 | eslint rule (relaxed in tests)                                                                                                                                          |
+| Formatting                                                         | Prettier, `format:check` in CI                                                                                                                                          |
+| Runtime validation of ALL external input                           | `zod` schema at every boundary — HTTP body, params, and **upstream responses** (see `clients/*.ts`: a malformed upstream body is treated as unavailable, never trusted) |
 
 **Finance-specific, non-negotiable:**
+
 - **Money is integer minor units, never floats.** `moneyMinor()` throws on non-integers,
   and there's a unit test asserting that (`money.test.ts`). Position math stays in integers
   end to end — no drift, ever.
@@ -39,6 +40,7 @@ the thing it checks is enforced consistently. References point at real files.
 ## 3. Test-writing standards (Gates 2–7)
 
 **Layout — the pyramid is visible in the directory tree:**
+
 ```
 services/<svc>/tests/unit          Gate 2 — no I/O
 services/<svc>/tests/integration   Gate 3 — ONE real dependency
