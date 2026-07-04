@@ -64,6 +64,13 @@ jobs:
       - run: npm ci
       - name: Unit tests — ${{ matrix.service }}
         run: npm run test:unit --workspace services/${{ matrix.service }}
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-unit-${{ matrix.service }}
+          path: services/${{ matrix.service }}/allure-results
+          if-no-files-found: ignore
 
   # ── GATE 3: integration tests — one real dependency per boundary ──
   # portfolio ↔ real Postgres; trade's HTTP clients ↔ real sockets/timeouts.
@@ -93,6 +100,13 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:test@localhost:5432/testdb
         run: npm run test:integration
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-integration
+          path: services/*/allure-results
+          if-no-files-found: ignore
 
   # ── GATE 4a: contract tests — CONSUMER side (trade generates pacts) ──
   contract-consumer:
@@ -112,6 +126,13 @@ jobs:
         with:
           name: pacts
           path: pacts/*.json
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-contract-consumer
+          path: services/trade/allure-results
+          if-no-files-found: ignore
       # In a multi-repo estate with a Pact Broker, replace the artifact
       # upload with `pact-broker publish` + `can-i-deploy` (see STANDARDS §4).
 
@@ -138,6 +159,13 @@ jobs:
           path: pacts/
       - name: Verify ${{ matrix.service }} honours trade's pact
         run: npm run test:contract:provider --workspace services/${{ matrix.service }}
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-contract-provider-${{ matrix.service }}
+          path: services/${{ matrix.service }}/allure-results
+          if-no-files-found: ignore
 
   # ── GATE 5: build container images (the real deployable artifacts) ──
   build-images:
@@ -167,6 +195,13 @@ jobs:
         run: ./scripts/wait-for-healthy.sh http://localhost:3003/health 60
       - name: Run component suite (drives trade via its public API)
         run: npm run test:component
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-component
+          path: tests/component/allure-results
+          if-no-files-found: ignore
       - name: Dump container logs on failure
         if: failure()
         run: docker compose -f docker-compose.component.yml logs
@@ -201,6 +236,13 @@ jobs:
       - run: k6 run tests/performance/trade-smoke.js
         env:
           TRADE_URL: http://localhost:3003
+      - name: Upload Allure results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-e2e
+          path: tests/e2e/allure-results
+          if-no-files-found: ignore
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -213,6 +255,65 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
+
+  # ── TEST REPORT: aggregate Allure results from every gate ──
+  # Runs even when gates fail — a red run is exactly when you want the report.
+  # On main: published to GitHub Pages (with trend history from gh-pages).
+  # On PRs: uploaded as a downloadable `allure-report` artifact.
+  test-report:
+    needs:
+      - unit-tests
+      - integration-tests
+      - contract-consumer
+      - contract-provider
+      - component-tests
+      - e2e-and-perf-smoke
+    if: always() && needs.unit-tests.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # pushes the generated report to the gh-pages branch
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Download Allure results from all gates
+        uses: actions/download-artifact@v4
+        with:
+          pattern: allure-results-*
+          path: collected-results
+      - name: Merge results (files are UUID-named — flat copy is collision-free)
+        run: |
+          mkdir -p allure-results
+          find collected-results -type f -exec cp {} allure-results/ \;
+          echo "Merged $(ls allure-results | wc -l) result files"
+      - name: Pull previous report history for trend charts
+        if: github.ref == 'refs/heads/main'
+        uses: actions/checkout@v4
+        continue-on-error: true # first run: gh-pages doesn't exist yet
+        with:
+          ref: gh-pages
+          path: gh-pages
+      - name: Restore history into results
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if [ -d gh-pages/history ]; then cp -R gh-pages/history allure-results/history; fi
+      - name: Generate Allure report
+        run: npx allure generate --clean --output allure-report allure-results
+      - name: Upload report as artifact (PRs)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: allure-report
+      - name: Publish report to GitHub Pages (main only)
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: allure-report
 
   # ── GATE 8 (main only): deployment placeholder ──
   # Wire in your registry push + Helm/ECS/K8s deploy + canary watch here.

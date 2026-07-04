@@ -92,6 +92,24 @@ GATE 8  deploy (main only, protected env)     placeholder
 Nightly (`.github/workflows/nightly-performance.yml`): k6 **load** (SLO percentiles
 p95/p99) and **spike** (market-open step; graceful degradation asserted, 5xx = fail).
 
+## Test report (Allure)
+
+Every Vitest suite (unit, integration, contract, component) and the Playwright e2e
+suite write [Allure](https://allurereport.org/) results. CI aggregates them across all
+gates into a single report — it runs **even when gates fail**, since a red run is
+exactly when you want the report:
+
+- **On `main`**: published to GitHub Pages with trend history across runs —
+  <https://rashmisagar.github.io/trading-platform/>
+- **On PRs**: attached to the workflow run as a downloadable `allure-report` artifact.
+
+Locally (needs Java for the Allure CLI — `brew install openjdk`):
+
+```bash
+npm run report:generate   # collect all workspaces' results + build the report
+npm run report:open       # serve it in a browser
+```
+
 ## Run it locally
 
 ```bash
