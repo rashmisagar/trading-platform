@@ -12,6 +12,7 @@
     "format:check": "prettier --check .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test:unit": "npm run test:unit --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
     "test:integration": "npm run test:integration --workspaces --if-present",
     "test:contract:consumer": "npm run test:contract:consumer --workspace services/trade",
     "test:contract:provider": "npm run test:contract:provider --workspace services/market-data && npm run test:contract:provider --workspace services/portfolio",
