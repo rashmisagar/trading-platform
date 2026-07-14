@@ -1,0 +1,47 @@
+name: SonarQube Cloud Analysis
+
+# Static analysis + coverage, separate from the CI quality gates so it can
+# evolve independently and never blocks the merge path while tuning.
+# Coverage comes from Vitest (v8/lcov) across all three services; the real
+# Postgres service lets the portfolio integration tests contribute coverage
+# instead of skipping.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: testdb
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history — SonarQube blames issues to commits
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Run all Vitest suites with coverage
+        env:
+          DATABASE_URL: postgresql://postgres:test@localhost:5432/testdb
+        run: npm run test:coverage
+      - name: SonarQube Cloud scan
+        uses: sonarsource/sonarqube-scan-action@v5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
