@@ -1,0 +1,34 @@
+{
+  "$comment": "Machine-readable API surface + domain invariants. Source of truth for scripts/generate-api-tests.mjs (deterministic boundary derivation). Extended interactively with GitHub Copilot + Playwright MCP via .github/prompts/generate-api-tests.prompt.md — the agent probes the running stack and adds endpoints/invariants here, then regenerates.",
+  "services": {
+    "trade": {
+      "baseUrlEnv": "TRADE_URL",
+      "defaultBaseUrl": "http://localhost:3003",
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/trades",
+          "body": {
+            "accountId": "string",
+            "symbol": "string",
+            "quantity": "int",
+            "side": "BUY|SELL"
+          },
+          "success": 201,
+          "rejected": [400, 422]
+        }
+      ],
+      "invariants": {
+        "maxNotionalMinor": 100000000,
+        "quantityRule": "positive-safe-integer",
+        "sides": ["BUY", "SELL"]
+      }
+    },
+    "market-data": {
+      "baseUrlEnv": "MARKET_DATA_URL",
+      "defaultBaseUrl": "http://localhost:3001",
+      "referenceSymbol": "AAPL",
+      "endpoints": [{ "method": "GET", "path": "/prices/:symbol", "success": 200 }]
+    }
+  }
+}

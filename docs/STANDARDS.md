@@ -93,7 +93,38 @@ tests/performance                  Gate 7 + nightly — k6
 - Keep SLOs in a checked-in file per service and generate k6 thresholds from it, so the
   documented SLO and the enforcing gate can't drift apart.
 
-## 6. Pipeline standards
+## 6. AI-assisted testing standards
+
+**Generation (catalog-driven + Copilot/Playwright MCP):**
+
+- `tests/e2e/api-catalog.json` is the **single source of truth**; generated specs
+  (`tests/e2e/tests/generated/*.gen.spec.ts`) are never edited by hand. The generator
+  is deterministic — same catalog in, same spec out — so regeneration diffs review
+  like any other code change.
+- AI extends the **catalog, not the specs**: Copilot agent mode probes the _running_
+  stack through the Playwright MCP server (`.vscode/mcp.json`) and records observed
+  status codes and shapes. Behaviour that wasn't observed against a live service
+  doesn't go in the catalog — no guessed contracts.
+- Generated tests derive boundaries at runtime (e.g. exact notional limit from the
+  live reference price) rather than hardcoding values that rot.
+- Generation covers boundary/permutation breadth; curated journeys stay hand-written
+  and tiny (§3: "E2E stays tiny").
+
+**Self-healing (`tests/e2e/lib/selfHealing.ts`):**
+
+- Healing is a **bridge, not a destination**. Every healing event that appears in a
+  report must end in a codified fix — update the test/contract/catalog (intentional
+  drift) or fix the provider (accidental drift) — then remove the synonym so future
+  drift on that field is loud again (`.github/prompts/heal-tests.prompt.md`).
+- Drift is **never silent**: every heal is recorded with strategy + confidence and
+  attached to the Allure report as `self-healing-report.json`.
+- Healing never fabricates data. A field no strategy can recover stays missing and
+  surfaces in `unhealed` — a test failing on unhealable drift is the escalation
+  _working_, not a flake to retry. Never weaken assertions to make drift pass.
+- Self-healing is **banned in the contract (Pact) suites** — their entire purpose is
+  to fail loudly on provider drift. Healing there would defeat the gate.
+
+## 7. Pipeline standards
 
 - **Cheapest gates first, hard `needs:` ordering** — the pipeline shape IS the pyramid.
 - **`fail-fast: false` on test matrices** — one service's failure shouldn't hide another's.
