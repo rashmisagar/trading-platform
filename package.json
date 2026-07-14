@@ -18,6 +18,7 @@
     "test:contract:provider": "npm run test:contract:provider --workspace services/market-data && npm run test:contract:provider --workspace services/portfolio",
     "test:component": "npm run test --workspace tests/component",
     "test:e2e": "npm run test --workspace tests/e2e",
+    "generate:tests": "node scripts/generate-api-tests.mjs && prettier --write tests/e2e/tests/generated",
     "report:generate": "./scripts/collect-allure-results.sh && allure generate --clean --output allure-report allure-results",
     "report:open": "allure open allure-report"
   },

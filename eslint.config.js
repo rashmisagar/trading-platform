@@ -37,4 +37,9 @@ export default tseslint.config(
     files: ['tests/performance/**'],
     languageOptions: { globals: { __ENV: 'readonly', __VU: 'readonly', __ITER: 'readonly' } },
   },
+  {
+    // node CLI scripts (generators etc.) — node globals, stderr logging allowed
+    files: ['scripts/**'],
+    languageOptions: { globals: { console: 'readonly', process: 'readonly' } },
+  },
 );

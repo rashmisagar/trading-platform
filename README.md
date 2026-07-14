@@ -110,6 +110,64 @@ npm run report:generate   # collect all workspaces' results + build the report
 npm run report:open       # serve it in a browser
 ```
 
+## AI-assisted testing: generation & self-healing
+
+Two capabilities layered onto the e2e suite (demo specs in `tests/e2e/tests/`):
+
+**Intelligent test generation.** `tests/e2e/api-catalog.json` declares the API surface
+and domain invariants; `npm run generate:tests` deterministically derives boundary
+specs from it (`tests/e2e/tests/generated/*.gen.spec.ts`) — including probing the
+_exact_ notional limit computed from the live reference price at runtime. The AI path
+extends the **catalog**, not the generated files: the `playwright` MCP server
+(`.vscode/mcp.json`) lets GitHub Copilot's agent mode probe the running stack, record
+real status codes/shapes into the catalog, and regenerate — reusable prompt in
+`.github/prompts/generate-api-tests.prompt.md`.
+
+**Self-healing pipeline** (detect → heal → record → escalate). Tests using the
+`healing` fixture (`tests/e2e/lib/fixtures.ts`) survive benign API drift — renamed
+fields (naming-convention normalization, domain synonyms, bounded fuzzy match) and
+relocated endpoints (declared candidate fallback). Every healing event carries a
+strategy + confidence and is attached to the Allure report as
+`self-healing-report.json` — drift is absorbed but never silent. Unhealable drift
+fails fast; `.github/prompts/heal-tests.prompt.md` walks Copilot through codifying
+healed drift back into contracts/tests so healing stays a bridge, not a destination.
+
+### Running them
+
+```bash
+# Self-healing pipeline demo — fully self-contained, no stack needed:
+# spins up a deliberately drifted trade API in-process and heals against it
+npm run test:e2e -- self-healing
+
+# Regenerate boundary specs from the catalog (deterministic; review the diff)
+npm run generate:tests
+
+# Generated specs run as part of the normal e2e suite (stack must be up —
+# docker compose -f docker-compose.e2e.yml up -d, or the no-Docker tsx path below)
+npm run test:e2e -- generated
+```
+
+In CI, both ride **Gate 7** unchanged: the self-healing demos and generated specs live
+in `tests/e2e/tests/`, so the existing e2e job picks them up, and healing reports land
+in the published Allure report automatically.
+
+The interactive path needs VS Code + GitHub Copilot: `.vscode/mcp.json` auto-configures
+the Playwright MCP server, and the repo ships two workspace prompts —
+`/generate-api-tests` (probe the running stack, extend the catalog, regenerate) and
+`/heal-tests` (turn recorded healing events into codified contract/test fixes). Both
+follow the conventions in `.github/copilot-instructions.md`.
+
+**Where this pays off** — and where it doesn't:
+
+- _Generation_ shines for boundary/permutation coverage that's tedious to hand-write
+  and rots when constants change: the notional-limit probes recompute the exact
+  boundary from the live price on every run. It does **not** replace the curated
+  journeys — those stay hand-written and tiny.
+- _Self-healing_ pays off at boundaries you don't fully control (a provider team
+  shipping renames ahead of contract updates): the suite keeps signaling on real
+  regressions instead of drowning them in rename noise. It is deliberately **not**
+  used in the contract (Pact) suites — their whole job is to fail loudly on drift.
+
 ## Run it locally
 
 ```bash
