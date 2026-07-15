@@ -54,7 +54,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [market-data, portfolio, trade]
+        service: [market-data, portfolio, trade, reg-reporting]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -145,7 +145,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [market-data, portfolio]
+        service: [market-data, portfolio, reg-reporting]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,0 +1,109 @@
+{
+  "$comment": "MiFID II RTS 22 field-validation regression corpus. Each case mutates one field of a known-good baseline report and pins the exact rule IDs the validator must raise. Governance: every production NACK or reporting incident adds a case here — the corpus only ever grows.",
+  "baseline": {
+    "reportStatus": "NEWT",
+    "transactionReferenceNumber": "trd-9d2f1c3a-0000-4000-8000-000000000001",
+    "executingEntityLei": "FINCOGLOBALMARKETS76",
+    "buyerLei": "CLIENTALPHACAPITAL58",
+    "sellerLei": "FINCOGLOBALMARKETS76",
+    "tradingDateTime": "2026-01-15T10:30:00.000Z",
+    "tradingCapacity": "DEAL",
+    "quantity": 100,
+    "priceMinor": 18950,
+    "priceCurrency": "USD",
+    "venue": "XOFF",
+    "instrumentIsin": "US0378331005"
+  },
+  "cases": [
+    {
+      "caseId": "MIFID-REG-001",
+      "description": "baseline report is fully valid — zero violations",
+      "mutations": {},
+      "expectRuleIds": []
+    },
+    {
+      "caseId": "MIFID-REG-002",
+      "description": "buyer LEI with transposed characters fails ISO 17442 checksum",
+      "mutations": { "buyerLei": "CLIENTALPHACAPITAL85" },
+      "expectRuleIds": ["RTS22-F7-LEI-CHECKSUM"]
+    },
+    {
+      "caseId": "MIFID-REG-003",
+      "description": "executing entity LEI of wrong length is rejected",
+      "mutations": { "executingEntityLei": "FINCOGLOBALMARKETS7" },
+      "expectRuleIds": ["RTS22-F4-LEI-CHECKSUM"]
+    },
+    {
+      "caseId": "MIFID-REG-004",
+      "description": "ISIN with corrupted check digit fails ISO 6166",
+      "mutations": { "instrumentIsin": "US0378331006" },
+      "expectRuleIds": ["RTS22-F41-ISIN-CHECKSUM"]
+    },
+    {
+      "caseId": "MIFID-REG-005",
+      "description": "future-dated tradingDateTime is rejected (clock-drift guard)",
+      "mutations": { "tradingDateTime": "2099-01-01T00:00:00.000Z" },
+      "expectRuleIds": ["RTS22-F28-TIMESTAMP"]
+    },
+    {
+      "caseId": "MIFID-REG-006",
+      "description": "date-only timestamp lacks required seconds granularity",
+      "mutations": { "tradingDateTime": "2026-01-15" },
+      "expectRuleIds": ["RTS22-F28-TIMESTAMP"]
+    },
+    {
+      "caseId": "MIFID-REG-007",
+      "description": "non-UTC (offset) timestamp is rejected — reports are UTC only",
+      "mutations": { "tradingDateTime": "2026-01-15T10:30:00.000+01:00" },
+      "expectRuleIds": ["RTS22-F28-TIMESTAMP"]
+    },
+    {
+      "caseId": "MIFID-REG-008",
+      "description": "zero quantity is rejected",
+      "mutations": { "quantity": 0 },
+      "expectRuleIds": ["RTS22-F30-QUANTITY"]
+    },
+    {
+      "caseId": "MIFID-REG-009",
+      "description": "fractional quantity is rejected — integer units only",
+      "mutations": { "quantity": 10.5 },
+      "expectRuleIds": ["RTS22-F30-QUANTITY"]
+    },
+    {
+      "caseId": "MIFID-REG-010",
+      "description": "negative price is rejected",
+      "mutations": { "priceMinor": -18950 },
+      "expectRuleIds": ["RTS22-F33-PRICE"]
+    },
+    {
+      "caseId": "MIFID-REG-011",
+      "description": "fractional price violates the integer-minor-units invariant",
+      "mutations": { "priceMinor": 189.5 },
+      "expectRuleIds": ["RTS22-F33-PRICE"]
+    },
+    {
+      "caseId": "MIFID-REG-012",
+      "description": "lowercase currency code fails ISO 4217 format",
+      "mutations": { "priceCurrency": "usd" },
+      "expectRuleIds": ["RTS22-F34-CURRENCY"]
+    },
+    {
+      "caseId": "MIFID-REG-013",
+      "description": "TRN longer than 52 characters is rejected",
+      "mutations": {
+        "transactionReferenceNumber": "trd-000000000000000000000000000000000000000000000000000000000"
+      },
+      "expectRuleIds": ["RTS22-F2-TRN-FORMAT"]
+    },
+    {
+      "caseId": "MIFID-REG-014",
+      "description": "multiple defects are ALL reported — regulators reject on any, testers need every violation at once",
+      "mutations": {
+        "buyerLei": "NOTAVALIDLEI00000000",
+        "instrumentIsin": "XX0000000000",
+        "quantity": -5
+      },
+      "expectRuleIds": ["RTS22-F7-LEI-CHECKSUM", "RTS22-F41-ISIN-CHECKSUM", "RTS22-F30-QUANTITY"]
+    }
+  ]
+}
