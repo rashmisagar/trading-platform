@@ -1,9 +1,9 @@
 # Regulatory Transaction Reporting — Test Strategy
 
 Scope: the `reg-reporting` service and the trade → reg-reporting flow.
-**MiFID II (RTS 22) is implemented and tested today**; EMIR and SFTR follow the same
-architecture (see §7). Every claim in this document maps to a test that exists in this
-repo — a strategy line without an enforcing test is a wish, not a strategy.
+**MiFID II (RTS 22) and EMIR (REFIT) are implemented and tested today**; SFTR follows
+the same architecture (see §7). Every claim in this document maps to a test that exists
+in this repo — a strategy line without an enforcing test is a wish, not a strategy.
 
 ## 1. What can go wrong (risk model)
 
@@ -51,6 +51,29 @@ golden corpus `tests/fixtures/mifid-regression-corpus.json`.
   against **real public identifiers** plus corruption cases (`validators.test.ts`);
   fixture LEIs are fictional but checksum-valid, so format-vs-checksum bugs can't hide.
 
+## 2b. The EMIR pack — same governance, plus pairing (Gate 2)
+
+EMIR reuses the corpus machinery (`emir-regression-corpus.json`,
+`emir.regression.pack.test.ts` — 14 cases, `EMIR-T1F*`/`EMIR-T2F*` rule IDs following
+the REFIT Table 1/Table 2 structure) and adds the regime's defining dimension:
+
+- **Dual-sided reporting**: one execution builds BOTH counterparty views
+  (delegated reporting), mirrored counterparties, opposite sides (`BUYR`/`SLLR`),
+  one shared **UTI** (REFIT structure: generating-entity LEI prefix + unique value,
+  deterministic from the trade id so a resubmission can never mint a second UTI).
+- **Pairing & matching** (`emirPairing.test.ts`): the TR's reconciliation is modelled
+  as a first-class function with a pinned **break taxonomy** — `UNPAIRED` (UTI never
+  met its other side), `UNMATCHED` with named breaks (`priceMinor`,
+  `sides-not-opposite`, `counterparties-not-mirrored`, …). Every break category has a
+  different remediation owner in production, so the tests assert the exact break
+  names, not just "mismatch".
+- **Regime vocabularies stay separate**: EMIR-REG-008 pins that a MiFID-style side
+  value (`BUY`) is invalid under EMIR — cross-regime bleed is a real defect class.
+- Demo note: cash equities are MiFIR-reportable, not EMIR; this repo dual-reports the
+  same execution flow through both engines to demonstrate the regime architecture.
+  In a real estate an **eligibility router** (instrument taxonomy → regimes) makes
+  that decision, and is itself a tested component.
+
 ## 3. Contract (Gate 4) — the boundary that pays for itself
 
 trade ↔ reg-reporting is Pact-covered in both directions
@@ -61,8 +84,11 @@ _silent completeness breach_ in production, the worst failure mode this domain h
 
 ## 4. End-to-end validation (Gate 7)
 
-`tests/e2e/tests/mifid-reporting.spec.ts` — four curated journeys across the real
-wiring (trade → market-data/portfolio → reg-reporting), no logic re-testing:
+`tests/e2e/tests/mifid-reporting.spec.ts` (four journeys) and
+`tests/e2e/tests/emir-reporting.spec.ts` (two journeys: a real execution produces a
+MATCHED dual-sided pair under one UTI; EMIR reconciliation shows zero unmatched
+pairs) across the real wiring (trade → market-data/portfolio → reg-reporting), no
+logic re-testing. The MiFID journeys:
 
 1. executed BUY → **exactly one** ACCEPTED report carrying the executed economics
    (accuracy is asserted field-by-field against the trade response, and enrichment
@@ -79,7 +105,8 @@ hard ceiling, never a sleep-and-hope.
 ## 5. High-volume integrity (nightly)
 
 `tests/performance/reg-reporting-volume.js` (k6): sustained trading load, then a
-**reconciliation gate in teardown** — every execution reported, zero NACKs, zero
+**reconciliation gate in teardown** covering both regimes — every execution reported
+(MiFID) and every execution paired-and-matched (EMIR), zero NACKs, zero breaks, zero
 drops, or the run throws. Latency thresholds alone are the wrong pass condition for
 reporting: a pipeline that drops 0.1% under load meets every latency SLO while
 breaching MiFID II on every dropped trade.
@@ -99,7 +126,7 @@ breaching MiFID II on every dropped trade.
 
 The architecture is regime-agnostic on purpose:
 
-| Piece                | MiFID II (today)          | EMIR (next)                                      | SFTR (later)                   |
+| Piece                | MiFID II (today)          | EMIR (today)                                     | SFTR (later)                   |
 | -------------------- | ------------------------- | ------------------------------------------------ | ------------------------------ |
 | Report builder       | RTS 22 subset             | trade + valuation + collateral                   | SFT lifecycle events           |
 | Validator + rule IDs | `RTS22-F*`                | `EMIR-T*` (Table 1/2 fields)                     | `SFTR-T*`                      |
@@ -107,7 +134,9 @@ The architecture is regime-agnostic on purpose:
 | Counterparty model   | buyer/seller LEI          | **dual-sided**: both LEIs + UTI pairing/matching | UTI + master-agreement linkage |
 | Reconciliation       | trade ⇄ report            | + inter-TR reconciliation                        | + collateral reuse chains      |
 
-The regime-specific hard parts to plan for: EMIR's **UTI pairing** (both sides must
-generate/agree the same UTI — a matching problem, not a validation problem) and
-SFTR's collateral reuse chains. Both slot in as new corpora + new reconciliation
-invariants, not new architecture.
+EMIR's pairing/matching is implemented here in its single-store form (both sides
+land in one TR). The remaining real-estate hard part is **cross-firm UTI
+agreement** — when the counterparty generates its own UTI at its own TR, pairing
+becomes an inter-TR reconciliation with a generation-waterfall dispute process.
+SFTR's collateral reuse chains remain future scope. Both slot in as new corpora +
+new reconciliation invariants, not new architecture.

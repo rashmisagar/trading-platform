@@ -36,18 +36,25 @@ export default function () {
   sleep(0.3);
 }
 
-// Integrity gate: after the load, the books must balance.
+// Integrity gate: after the load, the books must balance — both regimes.
 export function teardown() {
   sleep(5); // grace for in-flight fire-and-forget submissions
   const recon = JSON.parse(http.get(`${REG}/reconciliation`).body);
-  const balanced =
+  const mifidBalanced =
     recon.reportsAccepted === recon.executionsReceived &&
     recon.reportsRejected === 0 &&
     recon.enrichmentFailures === 0;
+  const emirBalanced =
+    recon.emir.pairsMatched === recon.executionsReceived &&
+    recon.emir.pairsUnmatched === 0 &&
+    recon.emir.sidesRejected === 0;
   check(recon, {
-    'reconciliation balances: every execution reported, zero NACKs, zero drops': () => balanced,
+    'MiFID reconciliation balances: every execution reported, zero NACKs, zero drops': () =>
+      mifidBalanced,
+    'EMIR reconciliation balances: every execution paired and matched, zero breaks': () =>
+      emirBalanced,
   });
-  if (!balanced) {
+  if (!mifidBalanced || !emirBalanced) {
     throw new Error(`reporting integrity breach: ${JSON.stringify(recon)}`);
   }
 }
