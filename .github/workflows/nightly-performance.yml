@@ -21,6 +21,7 @@ jobs:
           ./scripts/wait-for-healthy.sh http://localhost:3001/health 60
           ./scripts/wait-for-healthy.sh http://localhost:3002/health 60
           ./scripts/wait-for-healthy.sh http://localhost:3003/health 60
+          ./scripts/wait-for-healthy.sh http://localhost:3004/health 60
       - uses: grafana/setup-k6-action@v1
       - name: k6 LOAD — expected peak, SLO thresholds (p95/p99)
         run: k6 run tests/performance/trade-load.js
@@ -30,6 +31,11 @@ jobs:
         run: k6 run tests/performance/trade-spike.js
         env:
           TRADE_URL: http://localhost:3003
+      - name: k6 REG-REPORTING VOLUME — reconciliation must balance after load
+        run: k6 run tests/performance/reg-reporting-volume.js
+        env:
+          TRADE_URL: http://localhost:3003
+          REG_REPORTING_URL: http://localhost:3004
       - name: Dump logs on failure
         if: failure()
         run: docker compose -f docker-compose.e2e.yml logs

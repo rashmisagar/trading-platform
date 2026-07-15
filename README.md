@@ -63,11 +63,12 @@ gates in test-pyramid order.
 
 ## The services
 
-| Service       | Port | Responsibility                                                                           | Data                          |
-| ------------- | ---- | ---------------------------------------------------------------------------------------- | ----------------------------- |
-| `market-data` | 3001 | `GET /prices/:symbol` — quotes in integer minor units                                    | none (static source)          |
-| `portfolio`   | 3002 | `POST /positions/apply`, `GET /positions/:accountId` — idempotent position keeping       | owns Postgres                 |
-| `trade`       | 3003 | `POST /trades` — prices via market-data, validates (notional limit), books via portfolio | none (stateless orchestrator) |
+| Service         | Port | Responsibility                                                                                                                                                              | Data                                             |
+| --------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `market-data`   | 3001 | `GET /prices/:symbol` — quotes in integer minor units                                                                                                                       | none (static source)                             |
+| `portfolio`     | 3002 | `POST /positions/apply`, `GET /positions/:accountId` — idempotent position keeping                                                                                          | owns Postgres                                    |
+| `trade`         | 3003 | `POST /trades` — prices via market-data, validates (notional limit), books via portfolio                                                                                    | none (stateless orchestrator)                    |
+| `reg-reporting` | 3004 | `POST /executions`, `GET /reports/:trn`, `GET /reconciliation` — MiFID II (RTS 22) transaction reporting: enrichment, field validation, ARM ACK/NACK, duplicate suppression | in-memory (outbox + durable store in production) |
 
 Finance-specific behaviours baked in (and tested):
 
@@ -167,6 +168,28 @@ follow the conventions in `.github/copilot-instructions.md`.
   shipping renames ahead of contract updates): the suite keeps signaling on real
   regressions instead of drowning them in rename noise. It is deliberately **not**
   used in the contract (Pact) suites — their whole job is to fail loudly on drift.
+
+## Regulatory transaction reporting (MiFID II / EMIR / SFTR)
+
+Executed trades flow to `reg-reporting`, which enriches them into **MiFID II RTS 22**
+transaction reports (LEI/ISIN validation with real check-digit algorithms, buyer/seller
+derivation, UTC timestamps), simulates the ARM's ACK/NACK, suppresses duplicate TRNs,
+and exposes a reconciliation summary. Reporting is fire-and-forget from the trading
+path — an outage never halts trading, and completeness is owned by reconciliation.
+
+The testing is the point — see **[docs/REG-REPORTING-TEST-STRATEGY.md](docs/REG-REPORTING-TEST-STRATEGY.md)**
+for the full strategy (integrity pillars, corpus governance, EMIR/SFTR roadmap):
+
+```bash
+# RTS 22 field-validation regression pack (golden corpus, rule-ID traceable)
+npm run test:unit --workspace services/reg-reporting
+
+# End-to-end reporting integrity across the wired stack (stack must be up)
+npm run test:e2e -- mifid
+
+# Nightly high-volume integrity: reconciliation must balance after load
+k6 run tests/performance/reg-reporting-volume.js
+```
 
 ## Run it locally
 

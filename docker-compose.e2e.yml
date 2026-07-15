@@ -26,10 +26,15 @@ services:
       postgres:
         condition: service_healthy
 
+  reg-reporting:
+    build: ./services/reg-reporting
+    ports: ['3004:3004']
+
   trade:
     build: ./services/trade
     environment:
       MARKET_DATA_URL: http://market-data:3001
       PORTFOLIO_URL: http://portfolio:3002
+      REG_REPORTING_URL: http://reg-reporting:3004
     ports: ['3003:3003']
-    depends_on: [market-data, portfolio]
+    depends_on: [market-data, portfolio, reg-reporting]

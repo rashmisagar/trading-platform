@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { MarketDataClient } from './clients/marketDataClient.js';
 import type { PortfolioClient } from './clients/portfolioClient.js';
+import type { RegReportingClient } from './clients/regReportingClient.js';
 import { validateTrade } from './domain/tradeValidator.js';
 
 const tradeSchema = z.object({
@@ -15,6 +16,8 @@ const tradeSchema = z.object({
 export interface TradeDeps {
   marketData: MarketDataClient;
   portfolio: PortfolioClient;
+  /** Optional: MiFID II transaction reporting. Absent ⇒ reporting disabled. */
+  regReporting?: RegReportingClient;
 }
 
 export function buildApp(deps: TradeDeps): FastifyInstance {
@@ -57,6 +60,27 @@ export function buildApp(deps: TradeDeps): FastifyInstance {
     if (!applied.ok) {
       const status = applied.reason === 'PORTFOLIO_REJECTED' ? 422 : 503;
       return reply.code(status).send({ error: applied.reason });
+    }
+
+    // 4. MiFID II transaction reporting — fire-and-forget: a reporting
+    //    outage must never halt trading. Completeness is owned by
+    //    reg-reporting's reconciliation (in production: outbox + replay,
+    //    not best-effort HTTP); the client never throws.
+    if (deps.regReporting) {
+      void deps.regReporting
+        .reportExecution({
+          tradeId,
+          accountId: trade.accountId,
+          symbol: quote.symbol,
+          quantity: trade.quantity,
+          side: trade.side,
+          executedPriceMinor: quote.priceMinor,
+          currency: quote.currency,
+          executedAt: new Date().toISOString(),
+        })
+        .then((result) => {
+          if (!result.ok) app.log.error({ tradeId }, 'transaction report submission failed');
+        });
     }
 
     return reply.code(201).send({
