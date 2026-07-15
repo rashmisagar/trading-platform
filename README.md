@@ -235,3 +235,8 @@ multi-team/multi-repo estate you would swap in:
   tsx keeps this demo simple, production images should ship compiled JS.
 
 See `docs/STANDARDS.md` for the full coding and testing standards.
+
+## License
+
+Copyright © 2026 Rashmi Sagar. Released under the [MIT License](LICENSE) — reuse is
+welcome, but the copyright notice must be preserved.
