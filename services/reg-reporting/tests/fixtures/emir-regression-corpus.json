@@ -1,0 +1,116 @@
+{
+  "$comment": "EMIR (REFIT) field-validation regression corpus — same schema and governance as the MiFID corpus: each case mutates one aspect of a known-good baseline report and pins the exact rule IDs the validator must raise. The corpus only ever grows; every production NACK or TR reconciliation break adds a case.",
+  "baseline": {
+    "uti": "FINCOGLOBALMARKETS76TRDEMIRBASELINE0001",
+    "reportingCounterpartyLei": "FINCOGLOBALMARKETS76",
+    "otherCounterpartyLei": "CLIENTALPHACAPITAL58",
+    "counterpartySide": "SLLR",
+    "actionType": "NEWT",
+    "executionTimestamp": "2026-01-15T10:30:00.000Z",
+    "isin": "US0378331005",
+    "quantity": 100,
+    "priceMinor": 18950,
+    "priceCurrency": "USD",
+    "notionalMinor": 1895000,
+    "notionalCurrency": "USD",
+    "venue": "XOFF",
+    "cleared": false
+  },
+  "cases": [
+    {
+      "caseId": "EMIR-REG-001",
+      "description": "baseline report is fully valid — zero violations",
+      "mutations": {},
+      "expectRuleIds": []
+    },
+    {
+      "caseId": "EMIR-REG-002",
+      "description": "lowercase UTI fails the REFIT format rule",
+      "mutations": { "uti": "fincoglobalmarkets76trdemirbaseline0001" },
+      "expectRuleIds": ["EMIR-T2F1-UTI-FORMAT"]
+    },
+    {
+      "caseId": "EMIR-REG-003",
+      "description": "UTI longer than 52 characters is rejected",
+      "mutations": {
+        "uti": "FINCOGLOBALMARKETS76TRDEMIRBASELINE00010000000000000001"
+      },
+      "expectRuleIds": ["EMIR-T2F1-UTI-FORMAT"]
+    },
+    {
+      "caseId": "EMIR-REG-004",
+      "description": "UTI whose 20-char prefix is not a checksum-valid LEI is rejected",
+      "mutations": { "uti": "AAAAAAAAAAAAAAAAAAAATRDEMIRBASELINE0001" },
+      "expectRuleIds": ["EMIR-T2F1-UTI-PREFIX"]
+    },
+    {
+      "caseId": "EMIR-REG-005",
+      "description": "reporting counterparty LEI with transposed checksum fails ISO 17442",
+      "mutations": { "reportingCounterpartyLei": "FINCOGLOBALMARKETS67" },
+      "expectRuleIds": ["EMIR-T1F4-LEI-CHECKSUM"]
+    },
+    {
+      "caseId": "EMIR-REG-006",
+      "description": "other counterparty LEI with transposed checksum fails ISO 17442",
+      "mutations": { "otherCounterpartyLei": "CLIENTALPHACAPITAL85" },
+      "expectRuleIds": ["EMIR-T1F9-LEI-CHECKSUM"]
+    },
+    {
+      "caseId": "EMIR-REG-007",
+      "description": "self-dealing: reporting and other counterparty must differ",
+      "mutations": { "otherCounterpartyLei": "FINCOGLOBALMARKETS76" },
+      "expectRuleIds": ["EMIR-T1F14-SELF-DEALING"]
+    },
+    {
+      "caseId": "EMIR-REG-008",
+      "description": "MiFID-style side value (BUY) is not a valid EMIR side — regimes have different vocabularies",
+      "mutations": { "counterpartySide": "BUY" },
+      "expectRuleIds": ["EMIR-T1F17-SIDE"]
+    },
+    {
+      "caseId": "EMIR-REG-009",
+      "description": "future execution timestamp is rejected",
+      "mutations": { "executionTimestamp": "2099-01-01T00:00:00.000Z" },
+      "expectRuleIds": ["EMIR-T2F42-TIMESTAMP"]
+    },
+    {
+      "caseId": "EMIR-REG-010",
+      "description": "ISIN with corrupted check digit fails ISO 6166",
+      "mutations": { "isin": "US0378331006" },
+      "expectRuleIds": ["EMIR-T2F7-ISIN-CHECKSUM"]
+    },
+    {
+      "caseId": "EMIR-REG-011",
+      "description": "notional inconsistent with price × quantity — the drift a TR match would break on",
+      "mutations": { "notionalMinor": 1895001 },
+      "expectRuleIds": ["EMIR-T2F10-NOTIONAL-CONSISTENCY"]
+    },
+    {
+      "caseId": "EMIR-REG-012",
+      "description": "zero quantity fails the quantity rule AND breaks notional consistency — both must surface",
+      "mutations": { "quantity": 0 },
+      "expectRuleIds": ["EMIR-T2F5-QUANTITY", "EMIR-T2F10-NOTIONAL-CONSISTENCY"]
+    },
+    {
+      "caseId": "EMIR-REG-013",
+      "description": "fractional price violates integer minor units AND breaks notional consistency against the integer notional",
+      "mutations": { "priceMinor": 189.5 },
+      "expectRuleIds": ["EMIR-T2F4-PRICE", "EMIR-T2F10-NOTIONAL-CONSISTENCY"]
+    },
+    {
+      "caseId": "EMIR-REG-014",
+      "description": "multiple defects are ALL reported in one pass",
+      "mutations": {
+        "reportingCounterpartyLei": "NOTAVALIDLEI00000000",
+        "isin": "XX0000000000",
+        "quantity": -5
+      },
+      "expectRuleIds": [
+        "EMIR-T1F4-LEI-CHECKSUM",
+        "EMIR-T2F7-ISIN-CHECKSUM",
+        "EMIR-T2F5-QUANTITY",
+        "EMIR-T2F10-NOTIONAL-CONSISTENCY"
+      ]
+    }
+  ]
+}

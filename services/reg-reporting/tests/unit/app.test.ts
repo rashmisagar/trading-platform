@@ -82,6 +82,40 @@ describe('POST /executions — submission and ARM ACK/NACK', () => {
   });
 });
 
+describe('POST /executions — EMIR dual-sided reporting', () => {
+  it('creates a MATCHED EMIR pair alongside the MiFID report', async () => {
+    const app = buildApp();
+    const res = await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    expect(res.statusCode).toBe(201);
+    const { emir } = res.json();
+    expect(emir.pairingStatus).toBe('MATCHED');
+
+    const stored = (await app.inject({ method: 'GET', url: `/emir/reports/${emir.uti}` })).json();
+    expect(stored.pairing).toEqual({ status: 'MATCHED' });
+    expect(stored.violations).toEqual({ firm: [], client: [] });
+    expect(stored.pair.firmReport.counterpartySide).not.toBe(
+      stored.pair.clientReport.counterpartySide,
+    );
+  });
+
+  it('a duplicate TRN never creates a second EMIR pair', async () => {
+    const app = buildApp();
+    await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    const pairs = (
+      await app.inject({ method: 'GET', url: '/emir/reports?accountId=acc-alpha' })
+    ).json();
+    expect(pairs.pairs).toHaveLength(1);
+  });
+
+  it('reconciliation carries the EMIR pairing counters', async () => {
+    const app = buildApp();
+    await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    const recon = (await app.inject({ method: 'GET', url: '/reconciliation' })).json();
+    expect(recon.emir).toEqual({ pairsMatched: 1, pairsUnmatched: 0, sidesRejected: 0 });
+  });
+});
+
 describe('report queries', () => {
   it('lists reports by account for reconciliation tooling', async () => {
     const app = buildApp();

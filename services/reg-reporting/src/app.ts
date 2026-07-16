@@ -7,6 +7,9 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { buildEmirReportPair } from './domain/emirReport.js';
+import { matchPair } from './domain/emirPairing.js';
+import { validateEmirReport } from './domain/emirValidators.js';
 import { buildMifidReport } from './domain/mifidReport.js';
 import { validateMifidReport } from './domain/validators.js';
 import { ReportStore } from './repo/reportStore.js';
@@ -57,12 +60,47 @@ export function buildApp(store: ReportStore = new ReportStore()): FastifyInstanc
         .code(200)
         .send({ transactionReferenceNumber: execution.tradeId, duplicate: true });
     }
+
+    // EMIR dual-sided reporting: build BOTH counterparty views, validate
+    // each, then pair-and-match — the same execution feeds both regimes.
+    const emirBuilt = buildEmirReportPair(execution);
+    let emir: { uti: string; pairingStatus: string } | undefined;
+    if (emirBuilt.ok) {
+      const { pair } = emirBuilt;
+      const pairing = matchPair(pair.firmReport, pair.clientReport);
+      store.saveEmir(pair.uti, {
+        pair,
+        violations: {
+          firm: validateEmirReport(pair.firmReport),
+          client: validateEmirReport(pair.clientReport),
+        },
+        pairing,
+        accountId: execution.accountId,
+        receivedAt: new Date().toISOString(),
+      });
+      emir = { uti: pair.uti, pairingStatus: pairing.status };
+    }
+
     return reply.code(201).send({
       transactionReferenceNumber: execution.tradeId,
       status: outcome,
       violations,
       duplicate: false,
+      emir,
     });
+  });
+
+  app.get('/emir/reports/:uti', async (req, reply) => {
+    const { uti } = req.params as { uti: string };
+    const stored = store.getEmir(uti);
+    if (!stored) return reply.code(404).send({ error: 'PAIR_NOT_FOUND' });
+    return reply.code(200).send(stored);
+  });
+
+  app.get('/emir/reports', async (req, reply) => {
+    const query = z.object({ accountId: z.string().min(1) }).safeParse(req.query);
+    if (!query.success) return reply.code(400).send({ error: 'ACCOUNT_ID_REQUIRED' });
+    return reply.code(200).send({ pairs: store.emirByAccount(query.data.accountId) });
   });
 
   app.get('/reports/:trn', async (req, reply) => {
