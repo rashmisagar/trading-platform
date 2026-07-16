@@ -2,17 +2,18 @@
  * SFTR field validators. Rule IDs follow the reporting-table structure —
  * SFTR-T1F* = counterparty data, SFTR-T2F* = loan and collateral data
  * (field numbers indicative). Same contract as the other regimes: pure,
- * returns EVERY violation, corpus-pinned by exact rule ID.
+ * returns EVERY violation, corpus-pinned by exact rule ID. The mechanically
+ * shared UTI/counterparty rules live in validators.ts; the SFT-specific
+ * rules (type/agreement linkage, financing legs) stay here.
  */
 import type { SftrTradeReport } from './sftrReport.js';
 import {
   isValidIsin,
-  isValidLei,
   isValidTradingDateTime,
+  validateUtiAndCounterparties,
   type RuleViolation,
 } from './validators.js';
 
-const UTI_PATTERN = /^[A-Z0-9]{1,52}$/;
 const SFT_TYPES = ['SLEB', 'REPO', 'BSB', 'MGLD'];
 
 /** Master-agreement linkage — SFTR's distinctive consistency rule. */
@@ -26,37 +27,17 @@ export function validateSftrReport(
   report: SftrTradeReport,
   now: Date = new Date(),
 ): RuleViolation[] {
-  const violations: RuleViolation[] = [];
+  const violations: RuleViolation[] = validateUtiAndCounterparties(report, {
+    utiFormat: 'SFTR-T2F1-UTI-FORMAT',
+    utiPrefix: 'SFTR-T2F1-UTI-PREFIX',
+    reportingLei: 'SFTR-T1F3-LEI-CHECKSUM',
+    otherLei: 'SFTR-T1F11-LEI-CHECKSUM',
+    selfDealing: 'SFTR-T1F11-SELF-DEALING',
+  });
   const add = (ruleId: string, field: string, message: string): void => {
     violations.push({ ruleId, field, message });
   };
 
-  if (!UTI_PATTERN.test(report.uti)) {
-    add('SFTR-T2F1-UTI-FORMAT', 'uti', 'UTI must be 1–52 uppercase alphanumeric characters');
-  } else if (!isValidLei(report.uti.slice(0, 20))) {
-    add('SFTR-T2F1-UTI-PREFIX', 'uti', 'UTI must begin with the generating entity LEI (ISO 17442)');
-  }
-  if (!isValidLei(report.reportingCounterpartyLei))
-    add(
-      'SFTR-T1F3-LEI-CHECKSUM',
-      'reportingCounterpartyLei',
-      'reporting counterparty LEI fails ISO 17442',
-    );
-  if (!isValidLei(report.otherCounterpartyLei))
-    add(
-      'SFTR-T1F11-LEI-CHECKSUM',
-      'otherCounterpartyLei',
-      'other counterparty LEI fails ISO 17442',
-    );
-  if (
-    isValidLei(report.reportingCounterpartyLei) &&
-    report.reportingCounterpartyLei === report.otherCounterpartyLei
-  )
-    add(
-      'SFTR-T1F11-SELF-DEALING',
-      'otherCounterpartyLei',
-      'reporting and other counterparty must differ',
-    );
   if (report.counterpartySide !== 'GIVE' && report.counterpartySide !== 'TAKE')
     add('SFTR-T1F9-SIDE', 'counterpartySide', 'side must be GIVE or TAKE');
   if (!SFT_TYPES.includes(report.sftType))
