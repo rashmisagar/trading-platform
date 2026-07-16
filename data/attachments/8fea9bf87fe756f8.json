@@ -1,0 +1,34 @@
+{
+  "test": "heals endpoint relocation and field renames, and records every event",
+  "verdict": "API drift healed — codify these mappings in source, then remove them from SYNONYMS",
+  "events": [
+    {
+      "endpoint": "http://127.0.0.1:33555/api/v2/trades",
+      "strategy": "endpoint-fallback",
+      "healed": "http://127.0.0.1:33555/api/v2/trades",
+      "from": "http://127.0.0.1:33555/trades",
+      "confidence": 0.9
+    },
+    {
+      "endpoint": "http://127.0.0.1:33555/api/v2/trades",
+      "strategy": "field-synonym",
+      "healed": "status",
+      "from": "trade_status",
+      "confidence": 0.8
+    },
+    {
+      "endpoint": "http://127.0.0.1:33555/api/v2/trades",
+      "strategy": "field-convention",
+      "healed": "executedPriceMinor",
+      "from": "executed_price_minor",
+      "confidence": 0.95
+    },
+    {
+      "endpoint": "http://127.0.0.1:33555/api/v2/trades",
+      "strategy": "field-synonym",
+      "healed": "quantity",
+      "from": "qty",
+      "confidence": 0.8
+    }
+  ]
+}
