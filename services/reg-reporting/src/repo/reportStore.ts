@@ -7,6 +7,8 @@
 import type { EmirReportPair } from '../domain/emirReport.js';
 import type { PairingResult } from '../domain/emirPairing.js';
 import type { MifidTransactionReport } from '../domain/mifidReport.js';
+import type { SftrPairingResult } from '../domain/sftrPairing.js';
+import type { SftrReportPair } from '../domain/sftrReport.js';
 import type { RuleViolation } from '../domain/validators.js';
 
 export type ReportOutcome = 'ACCEPTED' | 'REJECTED';
@@ -27,6 +29,14 @@ export interface StoredEmirPair {
   receivedAt: string;
 }
 
+export interface StoredSftrPair {
+  pair: SftrReportPair;
+  violations: { firm: RuleViolation[]; client: RuleViolation[] };
+  pairing: SftrPairingResult;
+  accountId: string;
+  receivedAt: string;
+}
+
 export interface ReconciliationSummary {
   executionsReceived: number;
   reportsAccepted: number;
@@ -38,11 +48,17 @@ export interface ReconciliationSummary {
     pairsUnmatched: number;
     sidesRejected: number;
   };
+  sftr: {
+    pairsMatched: number;
+    pairsUnmatched: number;
+    sidesRejected: number;
+  };
 }
 
 export class ReportStore {
   private readonly byTrn = new Map<string, StoredReport>();
   private readonly emirByUti = new Map<string, StoredEmirPair>();
+  private readonly sftrByUti = new Map<string, StoredSftrPair>();
   private duplicates = 0;
   private executions = 0;
   private enrichmentFailures = 0;
@@ -87,22 +103,41 @@ export class ReportStore {
     return [...this.emirByUti.values()].filter((p) => p.accountId === accountId);
   }
 
+  saveSftr(uti: string, stored: StoredSftrPair): boolean {
+    if (this.sftrByUti.has(uti)) return false; // duplicate — already counted via TRN
+    this.sftrByUti.set(uti, stored);
+    return true;
+  }
+
+  getSftr(uti: string): StoredSftrPair | undefined {
+    return this.sftrByUti.get(uti);
+  }
+
+  sftrByAccount(accountId: string): StoredSftrPair[] {
+    return [...this.sftrByUti.values()].filter((p) => p.accountId === accountId);
+  }
+
   reconciliation(): ReconciliationSummary {
     const all = [...this.byTrn.values()];
-    const pairs = [...this.emirByUti.values()];
+    const emirPairs = [...this.emirByUti.values()];
+    const sftrPairs = [...this.sftrByUti.values()];
+    const pairCounters = (
+      pairs: { pairing: { status: string }; violations: { firm: unknown[]; client: unknown[] } }[],
+    ): { pairsMatched: number; pairsUnmatched: number; sidesRejected: number } => ({
+      pairsMatched: pairs.filter((p) => p.pairing.status === 'MATCHED').length,
+      pairsUnmatched: pairs.filter((p) => p.pairing.status !== 'MATCHED').length,
+      sidesRejected: pairs.filter(
+        (p) => p.violations.firm.length > 0 || p.violations.client.length > 0,
+      ).length,
+    });
     return {
       executionsReceived: this.executions,
       reportsAccepted: all.filter((r) => r.outcome === 'ACCEPTED').length,
       reportsRejected: all.filter((r) => r.outcome === 'REJECTED').length,
       duplicatesSuppressed: this.duplicates,
       enrichmentFailures: this.enrichmentFailures,
-      emir: {
-        pairsMatched: pairs.filter((p) => p.pairing.status === 'MATCHED').length,
-        pairsUnmatched: pairs.filter((p) => p.pairing.status !== 'MATCHED').length,
-        sidesRejected: pairs.filter(
-          (p) => p.violations.firm.length > 0 || p.violations.client.length > 0,
-        ).length,
-      },
+      emir: pairCounters(emirPairs),
+      sftr: pairCounters(sftrPairs),
     };
   }
 }

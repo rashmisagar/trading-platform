@@ -1,8 +1,8 @@
 # Regulatory Transaction Reporting — Test Strategy
 
 Scope: the `reg-reporting` service and the trade → reg-reporting flow.
-**MiFID II (RTS 22) and EMIR (REFIT) are implemented and tested today**; SFTR follows
-the same architecture (see §7). Every claim in this document maps to a test that exists
+**MiFID II (RTS 22), EMIR (REFIT), and SFTR are implemented and tested today** (see
+§7 for what remains regime-specific future scope). Every claim in this document maps to a test that exists
 in this repo — a strategy line without an enforcing test is a wish, not a strategy.
 
 ## 1. What can go wrong (risk model)
@@ -74,6 +74,27 @@ the REFIT Table 1/Table 2 structure) and adds the regime's defining dimension:
   In a real estate an **eligibility router** (instrument taxonomy → regimes) makes
   that decision, and is itself a tested component.
 
+## 2c. The SFTR pack — financing legs and master-agreement linkage (Gate 2)
+
+SFTR reuses the corpus machinery (`sftr-regression-corpus.json`,
+`sftr.regression.pack.test.ts` — 16 cases, `SFTR-T1F*`/`T2F*` rule IDs) and the
+EMIR-style dual-sided pairing, and adds what makes SFTs different:
+
+- **Two legs, both matched**: the reportable has a LOAN leg (value ≡ price ×
+  quantity) and a COLLATERAL leg (market value must cover the loan — the haircut
+  rule, `SFTR-T2F88-COLLATERAL-COVERAGE`). Pairing matches BOTH legs
+  (`sftrPairing.test.ts` pins a collateral-leg break by name).
+- **Master-agreement linkage** (`SFTR-T2F9-MASTER-AGREEMENT-CONSISTENCY`): the SFT
+  type must be consistent with the agreement documenting it — SLEB under GMSLA,
+  repo under GMRA — pinned in both directions (SFTR-REG-009/010).
+- **One identifier per regime**: the SFT UTI is deterministic but distinct from the
+  EMIR UTI for the same execution; a test pins the distinctness.
+- **Vocabulary isolation again**: SFTR-REG-007 pins that an EMIR side (`BUYR`) is
+  invalid under SFTR (`GIVE`/`TAKE`).
+- Demo note: the SFT is synthetic — the executed position is financed via a stock
+  loan under GMSLA (firm lends, client borrows, cash collateral at a 2% haircut).
+  Real estates route by transaction type via the eligibility router.
+
 ## 3. Contract (Gate 4) — the boundary that pays for itself
 
 trade ↔ reg-reporting is Pact-covered in both directions
@@ -84,11 +105,12 @@ _silent completeness breach_ in production, the worst failure mode this domain h
 
 ## 4. End-to-end validation (Gate 7)
 
-`tests/e2e/tests/mifid-reporting.spec.ts` (four journeys) and
-`tests/e2e/tests/emir-reporting.spec.ts` (two journeys: a real execution produces a
-MATCHED dual-sided pair under one UTI; EMIR reconciliation shows zero unmatched
-pairs) across the real wiring (trade → market-data/portfolio → reg-reporting), no
-logic re-testing. The MiFID journeys:
+`tests/e2e/tests/mifid-reporting.spec.ts` (four journeys),
+`tests/e2e/tests/emir-reporting.spec.ts` (two: MATCHED dual-sided pair under one
+UTI; zero unmatched in reconciliation), and `tests/e2e/tests/sftr-reporting.spec.ts`
+(two: MATCHED GIVE/TAKE stock-loan pair with covered collateral under its own UTI;
+zero unmatched) across the real wiring (trade → market-data/portfolio →
+reg-reporting), no logic re-testing. The MiFID journeys:
 
 1. executed BUY → **exactly one** ACCEPTED report carrying the executed economics
    (accuracy is asserted field-by-field against the trade response, and enrichment
@@ -105,9 +127,9 @@ hard ceiling, never a sleep-and-hope.
 ## 5. High-volume integrity (nightly)
 
 `tests/performance/reg-reporting-volume.js` (k6): sustained trading load, then a
-**reconciliation gate in teardown** covering both regimes — every execution reported
-(MiFID) and every execution paired-and-matched (EMIR), zero NACKs, zero breaks, zero
-drops, or the run throws. Latency thresholds alone are the wrong pass condition for
+**reconciliation gate in teardown** covering all three regimes — every execution
+reported (MiFID) and every execution paired-and-matched (EMIR and SFTR), zero NACKs,
+zero breaks, zero drops, or the run throws. Latency thresholds alone are the wrong pass condition for
 reporting: a pipeline that drops 0.1% under load meets every latency SLO while
 breaching MiFID II on every dropped trade.
 
@@ -126,7 +148,7 @@ breaching MiFID II on every dropped trade.
 
 The architecture is regime-agnostic on purpose:
 
-| Piece                | MiFID II (today)          | EMIR (today)                                     | SFTR (later)                   |
+| Piece                | MiFID II (today)          | EMIR (today)                                     | SFTR (today)                   |
 | -------------------- | ------------------------- | ------------------------------------------------ | ------------------------------ |
 | Report builder       | RTS 22 subset             | trade + valuation + collateral                   | SFT lifecycle events           |
 | Validator + rule IDs | `RTS22-F*`                | `EMIR-T*` (Table 1/2 fields)                     | `SFTR-T*`                      |
@@ -134,9 +156,10 @@ The architecture is regime-agnostic on purpose:
 | Counterparty model   | buyer/seller LEI          | **dual-sided**: both LEIs + UTI pairing/matching | UTI + master-agreement linkage |
 | Reconciliation       | trade ⇄ report            | + inter-TR reconciliation                        | + collateral reuse chains      |
 
-EMIR's pairing/matching is implemented here in its single-store form (both sides
-land in one TR). The remaining real-estate hard part is **cross-firm UTI
-agreement** — when the counterparty generates its own UTI at its own TR, pairing
-becomes an inter-TR reconciliation with a generation-waterfall dispute process.
-SFTR's collateral reuse chains remain future scope. Both slot in as new corpora +
-new reconciliation invariants, not new architecture.
+EMIR and SFTR pairing/matching are implemented here in their single-store form
+(both sides land in one TR). The remaining real-estate hard parts: **cross-firm UTI
+agreement** (when the counterparty generates its own UTI at its own TR, pairing
+becomes an inter-TR reconciliation with a generation-waterfall dispute process) and
+**SFTR collateral reuse chains** (tracking reused collateral across SFTs — a graph
+invariant, not a field rule). Both slot in as new corpora + new reconciliation
+invariants, not new architecture.

@@ -1,0 +1,126 @@
+{
+  "$comment": "SFTR field-validation regression corpus — same schema and governance as the MiFID/EMIR corpora: each case mutates one aspect of a known-good baseline report and pins the exact rule IDs the validator must raise. The corpus only ever grows; every production NACK or TR reconciliation break adds a case.",
+  "baseline": {
+    "uti": "FINCOGLOBALMARKETS76SFTBASELINE0001",
+    "reportingCounterpartyLei": "FINCOGLOBALMARKETS76",
+    "otherCounterpartyLei": "CLIENTALPHACAPITAL58",
+    "counterpartySide": "GIVE",
+    "actionType": "NEWT",
+    "sftType": "SLEB",
+    "masterAgreementType": "GMSLA",
+    "executionTimestamp": "2026-01-15T10:30:00.000Z",
+    "securityIsin": "US0378331005",
+    "quantity": 100,
+    "priceMinor": 18950,
+    "loanValueMinor": 1895000,
+    "loanCurrency": "USD",
+    "collateralMarketValueMinor": 1932900,
+    "collateralCurrency": "USD"
+  },
+  "cases": [
+    {
+      "caseId": "SFTR-REG-001",
+      "description": "baseline report is fully valid — zero violations",
+      "mutations": {},
+      "expectRuleIds": []
+    },
+    {
+      "caseId": "SFTR-REG-002",
+      "description": "lowercase UTI fails the format rule",
+      "mutations": { "uti": "fincoglobalmarkets76sftbaseline0001" },
+      "expectRuleIds": ["SFTR-T2F1-UTI-FORMAT"]
+    },
+    {
+      "caseId": "SFTR-REG-003",
+      "description": "UTI whose 20-char prefix is not a checksum-valid LEI is rejected",
+      "mutations": { "uti": "AAAAAAAAAAAAAAAAAAAASFTBASELINE0001" },
+      "expectRuleIds": ["SFTR-T2F1-UTI-PREFIX"]
+    },
+    {
+      "caseId": "SFTR-REG-004",
+      "description": "reporting counterparty LEI with transposed checksum fails ISO 17442",
+      "mutations": { "reportingCounterpartyLei": "FINCOGLOBALMARKETS67" },
+      "expectRuleIds": ["SFTR-T1F3-LEI-CHECKSUM"]
+    },
+    {
+      "caseId": "SFTR-REG-005",
+      "description": "other counterparty LEI with transposed checksum fails ISO 17442",
+      "mutations": { "otherCounterpartyLei": "CLIENTALPHACAPITAL85" },
+      "expectRuleIds": ["SFTR-T1F11-LEI-CHECKSUM"]
+    },
+    {
+      "caseId": "SFTR-REG-006",
+      "description": "self-dealing: reporting and other counterparty must differ",
+      "mutations": { "otherCounterpartyLei": "FINCOGLOBALMARKETS76" },
+      "expectRuleIds": ["SFTR-T1F11-SELF-DEALING"]
+    },
+    {
+      "caseId": "SFTR-REG-007",
+      "description": "EMIR-style side value (BUYR) is not a valid SFTR side — regime vocabularies don't bleed",
+      "mutations": { "counterpartySide": "BUYR" },
+      "expectRuleIds": ["SFTR-T1F9-SIDE"]
+    },
+    {
+      "caseId": "SFTR-REG-008",
+      "description": "unknown SFT type is rejected",
+      "mutations": { "sftType": "LOAN" },
+      "expectRuleIds": ["SFTR-T2F5-SFT-TYPE"]
+    },
+    {
+      "caseId": "SFTR-REG-009",
+      "description": "master-agreement linkage: a stock loan (SLEB) documented under GMRA is inconsistent",
+      "mutations": { "masterAgreementType": "GMRA" },
+      "expectRuleIds": ["SFTR-T2F9-MASTER-AGREEMENT-CONSISTENCY"]
+    },
+    {
+      "caseId": "SFTR-REG-010",
+      "description": "master-agreement linkage holds per type: a repo under GMSLA is equally inconsistent",
+      "mutations": { "sftType": "REPO", "masterAgreementType": "GMSLA" },
+      "expectRuleIds": ["SFTR-T2F9-MASTER-AGREEMENT-CONSISTENCY"]
+    },
+    {
+      "caseId": "SFTR-REG-011",
+      "description": "future execution timestamp is rejected",
+      "mutations": { "executionTimestamp": "2099-01-01T00:00:00.000Z" },
+      "expectRuleIds": ["SFTR-T2F12-TIMESTAMP"]
+    },
+    {
+      "caseId": "SFTR-REG-012",
+      "description": "security ISIN with corrupted check digit fails ISO 6166",
+      "mutations": { "securityIsin": "US0378331006" },
+      "expectRuleIds": ["SFTR-T2F41-ISIN-CHECKSUM"]
+    },
+    {
+      "caseId": "SFTR-REG-013",
+      "description": "loan value inconsistent with price × quantity",
+      "mutations": { "loanValueMinor": 1895001, "collateralMarketValueMinor": 1932901 },
+      "expectRuleIds": ["SFTR-T2F86-LOAN-VALUE-CONSISTENCY"]
+    },
+    {
+      "caseId": "SFTR-REG-014",
+      "description": "undercollateralized loan: collateral below loan value fails coverage",
+      "mutations": { "collateralMarketValueMinor": 1894999 },
+      "expectRuleIds": ["SFTR-T2F88-COLLATERAL-COVERAGE"]
+    },
+    {
+      "caseId": "SFTR-REG-015",
+      "description": "zero quantity fails the quantity rule AND breaks loan-value consistency — both surface",
+      "mutations": { "quantity": 0 },
+      "expectRuleIds": ["SFTR-T2F83-QUANTITY", "SFTR-T2F86-LOAN-VALUE-CONSISTENCY"]
+    },
+    {
+      "caseId": "SFTR-REG-016",
+      "description": "multiple defects are ALL reported in one pass",
+      "mutations": {
+        "otherCounterpartyLei": "NOTAVALIDLEI00000000",
+        "securityIsin": "XX0000000000",
+        "masterAgreementType": "GMRA"
+      },
+      "expectRuleIds": [
+        "SFTR-T1F11-LEI-CHECKSUM",
+        "SFTR-T2F41-ISIN-CHECKSUM",
+        "SFTR-T2F9-MASTER-AGREEMENT-CONSISTENCY"
+      ]
+    }
+  ]
+}
