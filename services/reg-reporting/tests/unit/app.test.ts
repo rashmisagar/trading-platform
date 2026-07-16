@@ -116,6 +116,43 @@ describe('POST /executions — EMIR dual-sided reporting', () => {
   });
 });
 
+describe('POST /executions — SFTR dual-sided reporting', () => {
+  it('creates a MATCHED SFTR pair (stock-loan view) alongside MiFID and EMIR', async () => {
+    const app = buildApp();
+    const res = await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    expect(res.statusCode).toBe(201);
+    const { sftr, emir } = res.json();
+    expect(sftr.pairingStatus).toBe('MATCHED');
+    expect(sftr.uti).not.toBe(emir.uti); // one identifier per regime
+
+    const stored = (await app.inject({ method: 'GET', url: `/sftr/reports/${sftr.uti}` })).json();
+    expect(stored.pairing).toEqual({ status: 'MATCHED' });
+    expect(stored.violations).toEqual({ firm: [], client: [] });
+    expect(stored.pair.firmReport.counterpartySide).toBe('GIVE');
+    expect(stored.pair.clientReport.counterpartySide).toBe('TAKE');
+    expect(stored.pair.firmReport.collateralMarketValueMinor).toBeGreaterThanOrEqual(
+      stored.pair.firmReport.loanValueMinor,
+    );
+  });
+
+  it('a duplicate TRN never creates a second SFTR pair', async () => {
+    const app = buildApp();
+    await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    const pairs = (
+      await app.inject({ method: 'GET', url: '/sftr/reports?accountId=acc-alpha' })
+    ).json();
+    expect(pairs.pairs).toHaveLength(1);
+  });
+
+  it('reconciliation carries the SFTR pairing counters', async () => {
+    const app = buildApp();
+    await app.inject({ method: 'POST', url: '/executions', payload: execution });
+    const recon = (await app.inject({ method: 'GET', url: '/reconciliation' })).json();
+    expect(recon.sftr).toEqual({ pairsMatched: 1, pairsUnmatched: 0, sidesRejected: 0 });
+  });
+});
+
 describe('report queries', () => {
   it('lists reports by account for reconciliation tooling', async () => {
     const app = buildApp();

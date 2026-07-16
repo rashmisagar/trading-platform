@@ -48,13 +48,19 @@ export function teardown() {
     recon.emir.pairsMatched === recon.executionsReceived &&
     recon.emir.pairsUnmatched === 0 &&
     recon.emir.sidesRejected === 0;
+  const sftrBalanced =
+    recon.sftr.pairsMatched === recon.executionsReceived &&
+    recon.sftr.pairsUnmatched === 0 &&
+    recon.sftr.sidesRejected === 0;
   check(recon, {
     'MiFID reconciliation balances: every execution reported, zero NACKs, zero drops': () =>
       mifidBalanced,
     'EMIR reconciliation balances: every execution paired and matched, zero breaks': () =>
       emirBalanced,
+    'SFTR reconciliation balances: every financing leg paired and matched, zero breaks': () =>
+      sftrBalanced,
   });
-  if (!mifidBalanced || !emirBalanced) {
+  if (!mifidBalanced || !emirBalanced || !sftrBalanced) {
     throw new Error(`reporting integrity breach: ${JSON.stringify(recon)}`);
   }
 }

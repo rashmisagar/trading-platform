@@ -63,12 +63,12 @@ gates in test-pyramid order.
 
 ## The services
 
-| Service         | Port | Responsibility                                                                                                                                                                                         | Data                                             |
-| --------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
-| `market-data`   | 3001 | `GET /prices/:symbol` — quotes in integer minor units                                                                                                                                                  | none (static source)                             |
-| `portfolio`     | 3002 | `POST /positions/apply`, `GET /positions/:accountId` — idempotent position keeping                                                                                                                     | owns Postgres                                    |
-| `trade`         | 3003 | `POST /trades` — prices via market-data, validates (notional limit), books via portfolio                                                                                                               | none (stateless orchestrator)                    |
-| `reg-reporting` | 3004 | `POST /executions`, `GET /reports/:trn`, `GET /reconciliation` — MiFID II (RTS 22) + EMIR (REFIT) reporting: enrichment, field validation, ARM ACK/NACK, duplicate suppression, dual-sided UTI pairing | in-memory (outbox + durable store in production) |
+| Service         | Port | Responsibility                                                                                                                                                                                                                | Data                                             |
+| --------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `market-data`   | 3001 | `GET /prices/:symbol` — quotes in integer minor units                                                                                                                                                                         | none (static source)                             |
+| `portfolio`     | 3002 | `POST /positions/apply`, `GET /positions/:accountId` — idempotent position keeping                                                                                                                                            | owns Postgres                                    |
+| `trade`         | 3003 | `POST /trades` — prices via market-data, validates (notional limit), books via portfolio                                                                                                                                      | none (stateless orchestrator)                    |
+| `reg-reporting` | 3004 | `POST /executions`, `GET /reports/:trn`, `GET /reconciliation` — MiFID II (RTS 22) + EMIR (REFIT) + SFTR reporting: enrichment, field validation, ARM ACK/NACK, duplicate suppression, dual-sided UTI pairing, financing legs | in-memory (outbox + durable store in production) |
 
 Finance-specific behaviours baked in (and tested):
 
@@ -171,12 +171,13 @@ follow the conventions in `.github/copilot-instructions.md`.
 
 ## Regulatory transaction reporting (MiFID II / EMIR / SFTR)
 
-Executed trades flow to `reg-reporting`, which reports them under **two regimes**:
+Executed trades flow to `reg-reporting`, which reports them under **three regimes**:
 **MiFID II RTS 22** transaction reports (LEI/ISIN validation with real check-digit
-algorithms, buyer/seller derivation, ARM ACK/NACK, duplicate-TRN suppression) and
+algorithms, buyer/seller derivation, ARM ACK/NACK, duplicate-TRN suppression),
 **EMIR REFIT** dual-sided reports (both counterparty views under one deterministic
-UTI, paired and matched with a named break taxonomy). A reconciliation summary
-covers both. Reporting is fire-and-forget from the trading
+UTI, paired and matched with a named break taxonomy), and **SFTR** securities-financing
+reports (stock-loan view with loan + collateral legs, master-agreement linkage,
+GIVE/TAKE pairing). A reconciliation summary covers all three. Reporting is fire-and-forget from the trading
 path — an outage never halts trading, and completeness is owned by reconciliation.
 
 The testing is the point — see **[docs/REG-REPORTING-TEST-STRATEGY.md](docs/REG-REPORTING-TEST-STRATEGY.md)**

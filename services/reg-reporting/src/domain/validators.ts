@@ -12,6 +12,61 @@ export interface RuleViolation {
   message: string;
 }
 
+const UTI_PATTERN = /^[A-Z0-9]{1,52}$/;
+
+/**
+ * Shared dual-sided identifier rules (UTI structure + counterparty LEIs) —
+ * mechanically identical across EMIR and SFTR; each regime supplies its own
+ * traceable rule IDs so packs and audits stay regime-scoped.
+ */
+export function validateUtiAndCounterparties(
+  report: { uti: string; reportingCounterpartyLei: string; otherCounterpartyLei: string },
+  rules: {
+    utiFormat: string;
+    utiPrefix: string;
+    reportingLei: string;
+    otherLei: string;
+    selfDealing: string;
+  },
+): RuleViolation[] {
+  const violations: RuleViolation[] = [];
+  if (!UTI_PATTERN.test(report.uti)) {
+    violations.push({
+      ruleId: rules.utiFormat,
+      field: 'uti',
+      message: 'UTI must be 1–52 uppercase alphanumeric characters',
+    });
+  } else if (!isValidLei(report.uti.slice(0, 20))) {
+    violations.push({
+      ruleId: rules.utiPrefix,
+      field: 'uti',
+      message: 'UTI must begin with the generating entity LEI (ISO 17442)',
+    });
+  }
+  if (!isValidLei(report.reportingCounterpartyLei))
+    violations.push({
+      ruleId: rules.reportingLei,
+      field: 'reportingCounterpartyLei',
+      message: 'reporting counterparty LEI fails ISO 17442',
+    });
+  if (!isValidLei(report.otherCounterpartyLei))
+    violations.push({
+      ruleId: rules.otherLei,
+      field: 'otherCounterpartyLei',
+      message: 'other counterparty LEI fails ISO 17442',
+    });
+  if (
+    isValidLei(report.reportingCounterpartyLei) &&
+    report.reportingCounterpartyLei === report.otherCounterpartyLei
+  )
+    violations.push({
+      ruleId: rules.selfDealing,
+      field: 'otherCounterpartyLei',
+      message: 'reporting and other counterparty must differ',
+    });
+  return violations;
+}
+
 /** ISO 17442 MOD 97-10 over the full 20 characters (letters → 10..35). */
 export function isValidLei(lei: string): boolean {
   if (!/^[A-Z0-9]{20}$/.test(lei)) return false;
