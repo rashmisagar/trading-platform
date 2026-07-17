@@ -28,6 +28,10 @@ services:
 
   reg-reporting:
     build: ./services/reg-reporting
+    # Reporting is async and may lag; trading may not. On shared hosts the
+    # reporting engine must never starve trade of CPU — enforced here, and
+    # asserted by the nightly volume gate + trade's load SLOs.
+    cpus: 0.5
     ports: ['3004:3004']
 
   trade:

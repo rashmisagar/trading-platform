@@ -67,15 +67,30 @@ export function validateUtiAndCounterparties(
   return violations;
 }
 
-/** ISO 17442 MOD 97-10 over the full 20 characters (letters → 10..35). */
+/**
+ * ISO 17442 MOD 97-10 over the full 20 characters (letters → 10..35).
+ * Memoized: the same handful of ref-data LEIs is validated ~15× per
+ * execution across the three regimes' reports — measurable churn at
+ * hundreds of executions/second. Bounded so hostile input can't grow it.
+ */
+const leiCache = new Map<string, boolean>();
+const LEI_CACHE_MAX = 1024;
+
 export function isValidLei(lei: string): boolean {
-  if (!/^[A-Z0-9]{20}$/.test(lei)) return false;
-  let remainder = 0;
-  for (const ch of lei) {
-    const value = /[0-9]/.test(ch) ? ch : String(ch.charCodeAt(0) - 55);
-    for (const digit of value) remainder = (remainder * 10 + Number(digit)) % 97;
+  const cached = leiCache.get(lei);
+  if (cached !== undefined) return cached;
+  let valid = false;
+  if (/^[A-Z0-9]{20}$/.test(lei)) {
+    let remainder = 0;
+    for (const ch of lei) {
+      const value = /[0-9]/.test(ch) ? ch : String(ch.charCodeAt(0) - 55);
+      for (const digit of value) remainder = (remainder * 10 + Number(digit)) % 97;
+    }
+    valid = remainder === 1;
   }
-  return remainder === 1;
+  if (leiCache.size >= LEI_CACHE_MAX) leiCache.clear();
+  leiCache.set(lei, valid);
+  return valid;
 }
 
 /** ISO 6166 ISIN: 12 chars, Luhn check digit over letter-expanded digits. */
