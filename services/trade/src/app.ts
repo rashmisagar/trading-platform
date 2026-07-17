@@ -62,25 +62,31 @@ export function buildApp(deps: TradeDeps): FastifyInstance {
       return reply.code(status).send({ error: applied.reason });
     }
 
-    // 4. MiFID II transaction reporting — fire-and-forget: a reporting
-    //    outage must never halt trading. Completeness is owned by
+    // 4. Transaction reporting — fire-and-forget: a reporting outage must
+    //    never halt trading. Dispatch is deferred with setImmediate so even
+    //    the submission's serialization cost stays OFF the trading latency
+    //    path (asserted by the nightly load SLOs). Completeness is owned by
     //    reg-reporting's reconciliation (in production: outbox + replay,
     //    not best-effort HTTP); the client never throws.
     if (deps.regReporting) {
-      void deps.regReporting
-        .reportExecution({
-          tradeId,
-          accountId: trade.accountId,
-          symbol: quote.symbol,
-          quantity: trade.quantity,
-          side: trade.side,
-          executedPriceMinor: quote.priceMinor,
-          currency: quote.currency,
-          executedAt: new Date().toISOString(),
-        })
-        .then((result) => {
-          if (!result.ok) app.log.error({ tradeId }, 'transaction report submission failed');
-        });
+      const { regReporting } = deps;
+      const executedAt = new Date().toISOString();
+      setImmediate(() => {
+        void regReporting
+          .reportExecution({
+            tradeId,
+            accountId: trade.accountId,
+            symbol: quote.symbol,
+            quantity: trade.quantity,
+            side: trade.side,
+            executedPriceMinor: quote.priceMinor,
+            currency: quote.currency,
+            executedAt,
+          })
+          .then((result) => {
+            if (!result.ok) app.log.error({ tradeId }, 'transaction report submission failed');
+          });
+      });
     }
 
     return reply.code(201).send({

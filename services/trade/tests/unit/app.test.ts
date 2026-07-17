@@ -103,11 +103,15 @@ describe('POST /trades — MiFID II transaction reporting hand-off', () => {
     };
   }
 
+  /** Reporting dispatch is deliberately deferred off the response path. */
+  const flushDeferredReporting = () => new Promise((resolve) => setImmediate(resolve));
+
   it('reports the execution with the EXECUTED price, quantity, and side', async () => {
     const deps = makeDeps();
     const regReporting = makeRegReporting();
     const app = buildApp({ ...deps, regReporting: regReporting as never });
     await app.inject({ method: 'POST', url: '/trades', payload: validTrade });
+    await flushDeferredReporting();
 
     expect(regReporting.reportExecution).toHaveBeenCalledTimes(1);
     expect(regReporting.reportExecution).toHaveBeenCalledWith(
@@ -143,6 +147,7 @@ describe('POST /trades — MiFID II transaction reporting hand-off', () => {
       payload: { ...validTrade, quantity: 10000 }, // breaches notional limit
     });
     expect(res.statusCode).toBe(422);
+    await flushDeferredReporting();
     expect(regReporting.reportExecution).not.toHaveBeenCalled();
   });
 
