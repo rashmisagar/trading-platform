@@ -1,0 +1,13 @@
+{
+  "test": "escalates unhealable drift instead of guessing",
+  "verdict": "API drift healed — codify these mappings in source, then remove them from SYNONYMS",
+  "events": [
+    {
+      "endpoint": "http://127.0.0.1:39069/api/v2/trades",
+      "strategy": "field-synonym",
+      "healed": "status",
+      "from": "trade_status",
+      "confidence": 0.8
+    }
+  ]
+}
